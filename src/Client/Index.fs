@@ -14,7 +14,8 @@ open Shared
 /// The different elements of the completed report.
 type Report =
     { Location: LocationResponse
-      Crimes: CrimeResponse array }
+      Crimes: CrimeResponse array
+      Weather: WeatherResponse }
 
 type ServerState =
     | Idle
@@ -34,6 +35,7 @@ type Msg =
     | PostcodeChanged of string
     | GotReport of Report
     | ErrorMsg of exn
+    | Clear
 
 /// The init function is called to start the message pump with an initial view.
 let init () =
@@ -53,15 +55,24 @@ let getResponse postcode = async {
     (* Task 4.4 WEATHER: Fetch the weather from the API endpoint you created.
        Then, save its value into the Report below. You'll need to add a new
        field to the Report type first, though! *)
+    let! weather = dojoApi.GetWeather postcode
 
     return
         { Location = location
-          Crimes = crimes }
+          Crimes = crimes
+          Weather = weather}
 }
 
 /// The update function knows how to update the model given a message.
 let update msg model =
-    match msg with
+    match msg  with
+    | Clear ->
+        { model with
+            ValidationError = None
+            Report = None
+            Postcode = ""
+            ServerState = Idle }, Cmd.none
+
     | GetReport ->
         match model.ValidationError with
         | None ->
@@ -76,11 +87,15 @@ let update msg model =
             ServerState = Idle }, Cmd.none
 
     | PostcodeChanged p ->
-        { model with
+        if not (Validation.isValidPostcode p) then
+         { model with
             Postcode = p
+            ValidationError = Some "Invalid postal code"}, Cmd.none
+        else { model with
+                Postcode = p
             (* Task 2.2 Validation. Use the Validation.isValidPostcode function to implement client-side form validation.
-               Note that the validation is the same shared code that runs on the server! *)
-            ValidationError = None }, Cmd.none
+                Note that the validation is the same shared code that runs on the server! *)
+                ValidationError = None }, Cmd.none
 
     | ErrorMsg e ->
         let errorAlert =
@@ -146,12 +161,13 @@ module ViewParts =
         widget "Map"  [
                 PigeonMaps.map [
                     (* Task 3.2 MAP: Set the center of the map using map.center, supply the lat/long value as input. *)
-
+                    map.center (lr.Location.LatLong.Latitude, lr.Location.LatLong.Longitude)
                     (* Task 3.3 MAP: Update the Zoom to 15. *)
-                    map.zoom 12
+                    map.zoom 15
                     map.height 500
                     map.markers [
                         (* Task 3.4 MAP: Create a marker for the map. Use the makeMarker function above. *)
+                        makeMarker (lr.Location.LatLong.Latitude, lr.Location.LatLong.Longitude)
                     ]
             ]
         ]
@@ -229,7 +245,7 @@ let navbar =
                             ]
                             Html.span [
                                 prop.style [ style.color.white ]
-                                prop.text "SAFE Dojo"
+                                prop.text "SAFE Dojo!"
                             ]
                         ]
                     ]
@@ -298,6 +314,17 @@ let view (model: Model) dispatch =
                                         prop.text "Fetch"
                                     ]
                                 ]
+                            Bulma.control.div [
+                                    Bulma.button.a [
+                                        color.isWarning
+                                        spacing.ml2
+                                        prop.onClick (fun _ -> dispatch Clear)
+                                        prop.disabled (System.String.IsNullOrEmpty(model.Postcode))
+                                        prop.text "Clear"
+                                        text.hasTextWeightBold
+                                        text.isItalic
+                                    ]
+                                ]
                             ]
                         ]
                     ]
@@ -322,11 +349,13 @@ let view (model: Model) dispatch =
                                         (* Task 4.5 WEATHER: Generate the view code for the weather tile
                                            using the weatherWidget function, supplying the weather data
                                            from the report value, and include it here as part of the list *)
+                                           weatherWidget report.Weather
                                     ]
                                 ]
                                 (* Task 3.1 MAP: Call the mapWidget function here, which creates a
                                    widget to display a map using the React ReCharts component. The function
                                    takes in a LocationResponse value as input and returns a ReactElement. *)
+                                mapWidget report.Location
                             ]
                         ]
                         Bulma.column [
